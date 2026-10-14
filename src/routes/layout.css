@@ -128,19 +128,28 @@
 	}
 }
 
+
+/* 1. Normal web browser (Safari / Chrome / Desktop): HIDE IT */
 #splash-overlay {
-  position: fixed;
-  inset: 0;
-  background-color: #09090b; /* Match your background */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 99999;
-  transition: opacity 0.4s ease, visibility 0.4s ease;
+  display: none;
 }
 
-#splash-overlay.fade-out {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
+/* 2. Installed iOS / PWA Home Screen app: SHOW IT */
+@media (display-mode: standalone) {
+  #splash-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: #09090b;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 99999;
+    transition: opacity 0.4s ease, visibility 0.4s ease;
+  }
+
+  #splash-overlay.fade-out {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
 }

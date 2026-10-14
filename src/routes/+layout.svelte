@@ -3,14 +3,24 @@
   import './layout.css';
   import { onMount } from 'svelte';
 
-    onMount(() => {
+  onMount(() => {
     const splash = document.getElementById('splash-overlay');
-    if (splash) {
-      splash.classList.add('fade-out');
+    if (!splash) return;
 
+    // Check if running as an installed PWA on iOS / Mobile
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      ('standalone' in navigator && navigator.standalone);
+
+    if (isStandalone) {
+      // On iOS Home Screen: do the smooth fade
+      splash.classList.add('fade-out');
       splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+    } else {
+      // On regular web browser: destroy it instantly, zero delay
+      splash.remove();
     }
-  });
+});
 
   let { children } = $props();
 </script>
