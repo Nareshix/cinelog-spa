@@ -61,7 +61,6 @@
 		lastEdited = trimmed ? new Date() : null;
 		isEditModalOpen = false;
 
-		// Persist note into IndexedDB
 		const existing = await getTrackedMedia(type, id);
 		await saveTrackedMedia({
 			key: `${type}_${id}`,
@@ -93,14 +92,14 @@
 
 <div class="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10 space-y-8">
 	{#if isLoading}
-		<div class="flex flex-col lg:flex-row gap-8 items-start">
+		<div class="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
 			<Skeleton class="aspect-[2/3] w-44 sm:w-56 rounded-xl shrink-0" />
-			<div class="flex-1 space-y-4">
+			<div class="flex-1 space-y-4 w-full flex flex-col items-center lg:items-start">
 				<Skeleton class="h-9 w-2/3" />
 				<Skeleton class="h-5 w-16 rounded-full" />
 				<Skeleton class="h-24 w-full" />
 			</div>
-			<Skeleton class="h-60 w-full lg:w-64 rounded-2xl shrink-0" />
+			<Skeleton class="h-60 w-full sm:w-72 lg:w-64 xl:w-72 rounded-2xl shrink-0" />
 		</div>
 
 	{:else if error}
@@ -113,10 +112,10 @@
 	{:else if media}
 		{@const posterUrl = getTMDBImageUrl(media.poster_path, 'w500')}
 
-		<div class="flex flex-col lg:flex-row gap-8 items-start">
+		<div class="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
 
-			<!-- LEFT: POSTER -->
-			<div class="w-44 sm:w-56 shrink-0">
+			<!-- LEFT: POSTER (Centered on mobile with mx-auto, Left on desktop) -->
+			<div class="w-44 sm:w-56 shrink-0 mx-auto lg:mx-0">
 				<div class="aspect-[2/3] w-full rounded-xl overflow-hidden border border-border/40 bg-muted shadow-md">
 					{#if posterUrl}
 						<img
@@ -139,10 +138,10 @@
 				</div>
 			</div>
 
-			<!-- CENTER: TITLE + RUNTIME + NOTES -->
-			<div class="flex-1 space-y-3 min-w-0">
+			<!-- CENTER: TITLE + RUNTIME + NOTES (Centered on mobile, Left on desktop) -->
+			<div class="flex-1 space-y-3 min-w-0 w-full flex flex-col items-center lg:items-start text-center lg:text-left">
 				<!-- Title & Duration Badge -->
-				<div class="space-y-1.5">
+				<div class="space-y-1.5 flex flex-col items-center lg:items-start">
 					<h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-foreground select-text">
 						{media.title}
 					</h1>
@@ -158,13 +157,13 @@
 
 				<!-- Notes Section -->
 				{#if notes.trim()}
-					<div class="pt-1 space-y-1.5">
-						<p class="text-sm sm:text-base leading-relaxed text-foreground whitespace-pre-line font-normal select-text">
+					<div class="pt-1 space-y-1.5 w-full">
+						<p class="text-sm sm:text-base leading-relaxed text-foreground whitespace-pre-line font-normal select-text text-center lg:text-left">
 							{notes}
 						</p>
 
-						<!-- Aligned Right: Timestamp + Edit button -->
-						<div class="flex items-center justify-end gap-2 pt-0.5">
+						<!-- Aligned Center on Mobile, Right on Desktop -->
+						<div class="flex items-center justify-center lg:justify-end gap-2 pt-0.5">
 							{#if lastEdited}
 								<span class="text-[11px] text-muted-foreground/50 select-none">
 									Edited {formatEditedTime(lastEdited)}
@@ -184,8 +183,8 @@
 						</div>
 					</div>
 				{:else}
-					<!-- Touch-friendly trigger: "+ Add notes..." -->
-					<div class="pt-1">
+					<!-- Touch-friendly trigger: "+ Add notes..." (Centered on mobile, Left on desktop) -->
+					<div class="pt-1 flex justify-center lg:justify-start w-full">
 						<button
 							type="button"
 							onclick={openEditModal}
@@ -198,8 +197,8 @@
 				{/if}
 			</div>
 
-			<!-- RIGHT: ACTION CARD -->
-			<div class="w-full sm:w-72 lg:w-64 xl:w-72 shrink-0">
+			<!-- RIGHT: ACTION CARD (Max width on mobile, Fixed width on desktop) -->
+			<div class="w-full sm:w-72 lg:w-64 xl:w-72 shrink-0 mx-auto lg:mx-0">
 				<MediaActionCard
 					media={{
 						id: media.id,
