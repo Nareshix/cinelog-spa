@@ -1,4 +1,271 @@
-<div class="p-6">
-    <h1 class="text-2xl font-bold">Search</h1>
-    <p class="text-muted-foreground mt-2">Find your content here.</p>
+<!-- src/routes/search/+page.svelte -->
+<script lang="ts">
+	import { Badge } from '$lib/components/ui/badge';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { tmdb, getTMDBImageUrl, type TMDBMediaItem } from '$lib/tmdb.svelte';
+	import { Search, Film, Tv, User, Star, X, AlertCircle } from 'lucide-svelte';
+
+	let query = $state('');
+	let activeTab = $state<'all' | 'movie' | 'tv' | 'person'>('all');
+	let results = $state<TMDBMediaItem[]>([]);
+	let isLoading = $state(false);
+	let error = $state<string | null>(null);
+
+	let inputRef = $state<HTMLInputElement | null>(null);
+	let debounceTimeout: ReturnType<typeof setTimeout>;
+
+	async function performSearch(searchTerm: string) {
+		const trimmed = searchTerm.trim();
+		if (!trimmed) {
+			results = [];
+			error = null;
+			isLoading = false;
+			return;
+		}
+
+		if (!tmdb.hasKey) return;
+
+		isLoading = true;
+		error = null;
+
+		try {
+			const response = await tmdb.searchMulti(trimmed);
+			results = response.results || [];
+		} catch (err: any) {
+			error = err?.message || 'Failed to search items.';
+			results = [];
+		} finally {
+			isLoading = false;
+		}
+	}
+
+	$effect(() => {
+		const current = query;
+		clearTimeout(debounceTimeout);
+
+		if (!current.trim()) {
+			results = [];
+			error = null;
+			isLoading = false;
+			return;
+		}
+
+		debounceTimeout = setTimeout(() => {
+			performSearch(current);
+		}, 350);
+
+		return () => clearTimeout(debounceTimeout);
+	});
+
+	function handleSubmit(e: SubmitEvent) {
+		e.preventDefault();
+		clearTimeout(debounceTimeout);
+		inputRef?.blur();
+		performSearch(query);
+	}
+
+	function handleScroll() {
+		if (document.activeElement === inputRef) {
+			inputRef?.blur();
+		}
+	}
+
+	function handleClear() {
+		query = '';
+		results = [];
+		inputRef?.focus();
+	}
+
+	const tabs = [
+		{ id: 'all', label: 'All' },
+		{ id: 'movie', label: 'Movies' },
+		{ id: 'tv', label: 'TV Shows' },
+		{ id: 'person', label: 'People' }
+	] as const;
+
+	const filteredResults = $derived(
+		activeTab === 'all'
+			? results
+			: results.filter((item) => item.media_type === activeTab)
+	);
+
+	function getTitle(item: TMDBMediaItem) {
+		return item.media_type === 'movie' ? item.title : item.name;
+	}
+
+	function getYearOrDetail(item: TMDBMediaItem) {
+		if (item.media_type === 'movie') return item.release_date?.slice(0, 4) || '—';
+		if (item.media_type === 'tv') return item.first_air_date?.slice(0, 4) || '—';
+		return item.known_for_department || 'Person';
+	}
+
+	function getImagePath(item: TMDBMediaItem) {
+		return item.media_type === 'person' ? item.profile_path : item.poster_path;
+	}
+</script>
+
+<svelte:window ontouchmove={handleScroll} />
+
+<!-- STICKY TOP SEARCH HEADER (accounts for desktop navbar top-14) -->
+<div class="sticky top-0 md:top-14 z-30 border-b border-border/40 bg-background/95 backdrop-blur-md px-4 py-2.5 md:px-6">
+	<div class="mx-auto max-w-7xl space-y-2.5">
+		<!-- Search Form -->
+		<form onsubmit={handleSubmit} class="relative flex items-center w-full max-w-2xl">
+			<Search class="absolute left-3.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+
+			<!-- type="text" + inputmode="search" prevents duplicate native browser clear button -->
+			<input
+				bind:this={inputRef}
+				bind:value={query}
+				type="text"
+				inputmode="search"
+				enterkeyhint="search"
+				autocapitalize="none"
+				autocorrect="off"
+				spellcheck="false"
+				placeholder="Search movies, TV, cast..."
+				class="flex h-10 w-full rounded-xl border border-input bg-muted/40 px-3 pl-10 pr-10 text-base shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:bg-background transition-all [&::-webkit-search-cancel-button]:hidden"
+			/>
+
+			{#if query}
+				<button
+					type="button"
+					onclick={handleClear}
+					class="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-muted-foreground hover:text-foreground active:scale-95"
+					aria-label="Clear search"
+				>
+					<X class="h-4 w-4" />
+				</button>
+			{/if}
+		</form>
+
+		<!-- Category Filter Pills -->
+		{#if results.length > 0 || isLoading}
+			<div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-4 px-4 md:mx-0 md:px-0">
+				{#each tabs as tab}
+					{@const isSelected = activeTab === tab.id}
+					<button
+						type="button"
+						onclick={() => (activeTab = tab.id)}
+						class="whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition-colors select-none active:scale-95
+							{isSelected
+								? 'bg-primary text-primary-foreground shadow-xs'
+								: 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'}"
+					>
+						{tab.label}
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
+</div>
+
+<!-- RESULTS CONTAINER (tightened top padding) -->
+<div class="mx-auto max-w-7xl px-3 pt-3 pb-6 md:px-6 md:pt-4">
+	<!-- Error state -->
+	{#if error}
+		<div class="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive text-sm">
+			<AlertCircle class="h-4 w-4 shrink-0" />
+			<p>{error}</p>
+		</div>
+	{/if}
+
+	<!-- Skeleton Loading Grid -->
+	{#if isLoading}
+		<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 sm:gap-4">
+			{#each Array(12) as _}
+				<div class="space-y-1.5">
+					<Skeleton class="aspect-[2/3] w-full rounded-lg" />
+					<Skeleton class="h-3.5 w-3/4 rounded-sm" />
+					<Skeleton class="h-3 w-1/2 rounded-sm" />
+				</div>
+			{/each}
+		</div>
+
+	<!-- Empty Results -->
+	{:else if query.trim() && filteredResults.length === 0}
+		<div class="flex flex-col items-center justify-center py-20 text-center px-4">
+			<Search class="h-10 w-10 text-muted-foreground/30 mb-3" />
+			<h3 class="text-base font-semibold">No results found</h3>
+			<p class="text-xs text-muted-foreground mt-1 max-w-xs">
+				No matches found for "{query}". Check spelling or try another title.
+			</p>
+		</div>
+
+	<!-- Initial State -->
+	{:else if !query.trim()}
+		<div class="flex flex-col items-center justify-center py-24 text-center text-muted-foreground">
+			<Film class="h-12 w-12 text-muted-foreground/25 mb-3" />
+			<p class="text-sm font-medium">Search for movies, TV series, or people</p>
+		</div>
+
+	<!-- Poster Grid (Clean container with zero default padding above poster) -->
+	{:else}
+		<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 sm:gap-4">
+			{#each filteredResults as item (item.id + item.media_type)}
+				{@const imageSrc = getTMDBImageUrl(getImagePath(item), 'w342')}
+				{@const title = getTitle(item)}
+				{@const meta = getYearOrDetail(item)}
+
+				<div class="group relative flex flex-col overflow-hidden rounded-lg border border-border/40 bg-card active:scale-[0.98] transition-transform select-none">
+					<!-- Poster / Profile Picture (flush to the top edge) -->
+					<div class="relative aspect-[2/3] w-full bg-muted overflow-hidden">
+						{#if imageSrc}
+							<img
+								src={imageSrc}
+								alt={title}
+								loading="lazy"
+								decoding="async"
+								class="h-full w-full object-cover"
+							/>
+						{:else}
+							<div class="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-muted-foreground/40">
+								{#if item.media_type === 'movie'}
+									<Film class="h-8 w-8" />
+								{:else if item.media_type === 'tv'}
+									<Tv class="h-8 w-8" />
+								{:else}
+									<User class="h-8 w-8" />
+								{/if}
+								<span class="text-[10px] text-center">No Photo</span>
+							</div>
+						{/if}
+
+						<!-- Media Type Badge -->
+						<div class="absolute top-1.5 left-1.5">
+							<Badge
+								variant="secondary"
+								class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
+							>
+								{item.media_type === 'tv' ? 'TV' : item.media_type}
+							</Badge>
+						</div>
+
+						<!-- Star Rating Badge -->
+						{#if item.media_type !== 'person' && item.vote_average && item.vote_average > 0}
+							<div class="absolute top-1.5 right-1.5">
+								<Badge
+									variant="secondary"
+									class="text-[9px] font-semibold gap-0.5 px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
+								>
+									<Star class="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+									{item.vote_average.toFixed(1)}
+								</Badge>
+							</div>
+						{/if}
+					</div>
+
+					<!-- Metadata Below Poster -->
+					<div class="p-2 sm:p-2.5">
+						<h2 class="text-xs sm:text-sm font-semibold tracking-tight line-clamp-1" title={title}>
+							{title}
+						</h2>
+						<p class="text-[11px] text-muted-foreground mt-0.5">
+							{meta}
+						</p>
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
 </div>
