@@ -21,6 +21,7 @@
 	// Filtering & Sorting State
 	let searchQuery = $state('');
 	let activeTab = $state<'all' | 'watched' | 'watchlist' | 'watching'>('all');
+	let typeFilter = $state<'all' | 'movie' | 'tv'>('all');
 	let onlyLiked = $state(false);
 
 	// Sort Dropdown State
@@ -50,7 +51,13 @@
 		load();
 	});
 
-	// Filtered & Sorted items
+	// Items filtered by Type (used for dynamic tab counts)
+	const baseTypedItems = $derived.by(() => {
+		if (typeFilter === 'all') return items;
+		return items.filter((item) => item.type === typeFilter);
+	});
+
+	// Final Filtered & Sorted items
 	const displayedItems = $derived.by(() => {
 		let list = [...items];
 
@@ -60,17 +67,22 @@
 			list = list.filter((item) => item.title.toLowerCase().includes(query));
 		}
 
-		// 2. Category Tab Filter
+		// 2. Media Type Filter (All / Movies / TV)
+		if (typeFilter !== 'all') {
+			list = list.filter((item) => item.type === typeFilter);
+		}
+
+		// 3. Status Tab Filter
 		if (activeTab === 'watched') list = list.filter((i) => i.status === 'watched');
 		else if (activeTab === 'watchlist') list = list.filter((i) => i.status === 'watchlist');
 		else if (activeTab === 'watching') list = list.filter((i) => i.status === 'watching');
 
-		// 3. Liked Filter
+		// 4. Liked Filter
 		if (onlyLiked) {
 			list = list.filter((i) => i.liked);
 		}
 
-		// 4. Sorting
+		// 5. Sorting
 		return list.sort((a, b) => {
 			if (sortBy === 'rating-desc') {
 				const diff = (b.rating || 0) - (a.rating || 0);
@@ -86,12 +98,12 @@
 		});
 	});
 
-	// Tabs order: All -> Watched -> Watchlist -> Watching
+	// Tabs counts dynamically adjust if Movies or TV is selected
 	const tabs = [
-		{ id: 'all', label: 'All', count: () => items.length },
-		{ id: 'watched', label: 'Watched', count: () => items.filter((i) => i.status === 'watched').length },
-		{ id: 'watchlist', label: 'Watchlist', count: () => items.filter((i) => i.status === 'watchlist').length },
-		{ id: 'watching', label: 'Watching', count: () => items.filter((i) => i.status === 'watching').length }
+		{ id: 'all', label: 'All', count: () => baseTypedItems.length },
+		{ id: 'watched', label: 'Watched', count: () => baseTypedItems.filter((i) => i.status === 'watched').length },
+		{ id: 'watchlist', label: 'Watchlist', count: () => baseTypedItems.filter((i) => i.status === 'watchlist').length },
+		{ id: 'watching', label: 'Watching', count: () => baseTypedItems.filter((i) => i.status === 'watching').length }
 	] as const;
 </script>
 
@@ -117,7 +129,7 @@
 
 	<!-- Controls Bar -->
 	<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-border/40 pb-3.5">
-		<!-- Category Tabs -->
+		<!-- Status Tabs -->
 		<div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
 			{#each tabs as tab}
 				{@const isSelected = activeTab === tab.id}
@@ -138,8 +150,42 @@
 			{/each}
 		</div>
 
-		<!-- Secondary Controls: Liked + Sort Dropdown -->
-		<div class="flex items-center gap-2 self-start md:self-auto">
+		<!-- Secondary Controls: Type Segment (All/Movies/TV) + Liked + Sort Dropdown -->
+		<div class="flex flex-wrap items-center gap-2 self-start md:self-auto">
+			<!-- Media Type Segmented Control -->
+			<div class="inline-flex items-center rounded-full border border-border/60 bg-muted/40 p-0.5 select-none text-xs">
+				<button
+					type="button"
+					onclick={() => (typeFilter = 'all')}
+					class="rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer
+						{typeFilter === 'all'
+							? 'bg-background text-foreground shadow-xs'
+							: 'text-muted-foreground hover:text-foreground'}"
+				>
+					All
+				</button>
+				<button
+					type="button"
+					onclick={() => (typeFilter = 'movie')}
+					class="rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer
+						{typeFilter === 'movie'
+							? 'bg-background text-foreground shadow-xs'
+							: 'text-muted-foreground hover:text-foreground'}"
+				>
+					Movies
+				</button>
+				<button
+					type="button"
+					onclick={() => (typeFilter = 'tv')}
+					class="rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer
+						{typeFilter === 'tv'
+							? 'bg-background text-foreground shadow-xs'
+							: 'text-muted-foreground hover:text-foreground'}"
+				>
+					TV
+				</button>
+			</div>
+
 			<!-- Liked Toggle Pill -->
 			<button
 				type="button"
@@ -269,12 +315,12 @@
 						<!-- Clean Icons Only Row -->
 						<div class="flex items-center justify-between pt-1 border-t border-border/30 text-xs min-h-[22px]">
 							<div class="flex items-center gap-1.5">
-								{#if item.status === 'watching'}
-									<Play class="h-3.5 w-3.5 fill-primary text-primary" title="Watching" />
-								{:else if item.status === 'watched'}
+								{#if item.status === 'watched'}
 									<EyeClosed class="h-3.5 w-3.5 stroke-primary text-primary" title="Watched" />
 								{:else if item.status === 'watchlist'}
 									<Bookmark class="h-3.5 w-3.5 fill-primary text-primary" title="Watchlist" />
+								{:else if item.status === 'watching'}
+									<Play class="h-3.5 w-3.5 fill-primary text-primary" title="Watching" />
 								{/if}
 
 								{#if item.liked}

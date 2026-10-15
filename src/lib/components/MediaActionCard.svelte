@@ -1,8 +1,15 @@
 <!-- src/lib/components/MediaActionCard.svelte -->
 <script lang="ts">
 	import { Separator } from '$lib/components/ui/separator';
+	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Play, Eye, EyeClosed, Heart, Bookmark, X, Trash2 } from 'lucide-svelte';
-	import { getTrackedMedia, saveTrackedMedia, deleteTrackedMedia, type TrackedMedia } from '$lib/db/mediaStore';
+	import {
+		getTrackedMedia,
+		saveTrackedMedia,
+		deleteTrackedMedia,
+		type TrackedMedia
+	} from '$lib/db/mediaStore';
 
 	let {
 		media
@@ -23,6 +30,9 @@
 	let userRating = $state(0);
 	let hoverRating = $state(0);
 	let isRatingAreaHovered = $state(false);
+
+	// Confirmation modal state
+	let isConfirmOpen = $state(false);
 
 	$effect(() => {
 		const mediaId = media.id;
@@ -82,7 +92,6 @@
 		await saveTrackedMedia(record);
 	}
 
-	// 1. Watching = In-progress (Cannot have rating or like)
 	function toggleWatching() {
 		if (isWatching) {
 			isWatching = false;
@@ -90,13 +99,12 @@
 			isWatching = true;
 			isWatched = false;
 			isWatchlist = false;
-			isLiked = false;     // Reset like
-			userRating = 0;      // Reset rating
+			isLiked = false;
+			userRating = 0;
 		}
 		persist(isWatching, isWatched, isWatchlist, isLiked, userRating);
 	}
 
-	// 2. Watched = Completed
 	function toggleWatched() {
 		if (isWatched) {
 			isWatched = false;
@@ -110,20 +118,18 @@
 		persist(isWatching, isWatched, isWatchlist, isLiked, userRating);
 	}
 
-	// 3. Liked = Requires show to be completed (moves to Watched)
 	function toggleLiked() {
 		if (isLiked) {
 			isLiked = false;
 		} else {
 			isLiked = true;
-			isWatched = true;    // Automatically finished
-			isWatching = false;   // No longer just "in-progress"
+			isWatched = true;
+			isWatching = false;
 			isWatchlist = false;
 		}
 		persist(isWatching, isWatched, isWatchlist, isLiked, userRating);
 	}
 
-	// 4. Watchlist = Planned (Cannot have watching, watched, like, or rating)
 	function toggleWatchlist() {
 		if (isWatchlist) {
 			isWatchlist = false;
@@ -137,12 +143,11 @@
 		persist(isWatching, isWatched, isWatchlist, isLiked, userRating);
 	}
 
-	// 5. Rating = Automatically marks as Watched
 	function setRating(val: number) {
 		userRating = val;
 		hoverRating = 0;
 		isWatched = true;
-		isWatching = false;  // Completed
+		isWatching = false;
 		isWatchlist = false;
 		persist(isWatching, isWatched, isWatchlist, isLiked, userRating);
 	}
@@ -153,7 +158,7 @@
 		persist(isWatching, isWatched, isWatchlist, isLiked, 0);
 	}
 
-	async function removeFromLibrary() {
+	async function confirmRemove() {
 		isWatching = false;
 		isWatched = false;
 		isWatchlist = false;
@@ -161,6 +166,7 @@
 		userRating = 0;
 		hoverRating = 0;
 		await deleteTrackedMedia(media.type, media.id);
+		isConfirmOpen = false;
 	}
 
 	const isTracked = $derived(isWatching || isWatched || isWatchlist || isLiked || userRating > 0);
@@ -176,29 +182,9 @@
 </svg>
 
 <div class="rounded-2xl border border-white/10 bg-[#16171b] p-4 text-white shadow-xl space-y-3.5 select-none w-full">
-	<!-- Top Row: Watching, Watched, Liked, Watchlist -->
+	<!-- Top Row: Watched, Liked, Watchlist, Watching (Watching is now last) -->
 	<div class="grid grid-cols-4 items-center text-center gap-1">
-<!-- Watching (Default shadcn primary theme) -->
-		<button
-			type="button"
-			onclick={toggleWatching}
-			class="flex flex-col items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-		>
-			<Play
-				class="h-5 w-5 transition-colors {isWatching
-					? 'fill-primary text-primary'
-					: 'text-muted-foreground hover:text-white'}"
-			/>
-			<span
-				class="text-[11px] font-medium transition-colors {isWatching
-					? 'text-primary'
-					: 'text-muted-foreground'}"
-			>
-				Watching
-			</span>
-		</button>
-
-		<!-- Watched -->
+		<!-- 1. Watched -->
 		<button
 			type="button"
 			onclick={toggleWatched}
@@ -218,7 +204,7 @@
 			</span>
 		</button>
 
-		<!-- Liked -->
+		<!-- 2. Liked -->
 		<button
 			type="button"
 			onclick={toggleLiked}
@@ -238,7 +224,7 @@
 			</span>
 		</button>
 
-		<!-- Watchlist -->
+		<!-- 3. Watchlist -->
 		<button
 			type="button"
 			onclick={toggleWatchlist}
@@ -255,6 +241,26 @@
 					: 'text-muted-foreground'}"
 			>
 				Watchlist
+			</span>
+		</button>
+
+		<!-- 4. Watching (After Watchlist, at the end) -->
+		<button
+			type="button"
+			onclick={toggleWatching}
+			class="flex flex-col items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
+		>
+			<Play
+				class="h-5 w-5 transition-colors {isWatching
+					? 'fill-primary text-primary'
+					: 'text-muted-foreground hover:text-white'}"
+			/>
+			<span
+				class="text-[11px] font-medium transition-colors {isWatching
+					? 'text-primary'
+					: 'text-muted-foreground'}"
+			>
+				Watching
 			</span>
 		</button>
 	</div>
@@ -348,12 +354,12 @@
 		</div>
 	</div>
 
-	<!-- Remove from Library -->
+	<!-- Bottom Section: Remove from Library -->
 	{#if isTracked}
 		<Separator class="bg-white/10" />
 		<button
 			type="button"
-			onclick={removeFromLibrary}
+			onclick={() => (isConfirmOpen = true)}
 			class="flex items-center justify-center gap-1.5 w-full py-1 text-xs text-muted-foreground/60 hover:text-red-400 transition-colors cursor-pointer active:scale-95"
 		>
 			<Trash2 class="h-3.5 w-3.5" />
@@ -361,3 +367,32 @@
 		</button>
 	{/if}
 </div>
+
+<!-- CONFIRMATION DIALOG -->
+<Dialog.Root bind:open={isConfirmOpen}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Remove from Library?</Dialog.Title>
+			<Dialog.Description>
+				Are you sure you want to remove <span class="font-medium text-foreground">"{media.title}"</span> from your library? Your status, rating, and tracked data will be permanently cleared.
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<Dialog.Footer class="gap-2 sm:gap-0 pt-2">
+			<Button
+				type="button"
+				variant="outline"
+				onclick={() => (isConfirmOpen = false)}
+			>
+				Cancel
+			</Button>
+			<Button
+				type="button"
+				variant="destructive"
+				onclick={confirmRemove}
+			>
+				Remove
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
