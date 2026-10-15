@@ -106,14 +106,13 @@
 
 <svelte:window ontouchmove={handleScroll} />
 
-<!-- STICKY TOP SEARCH HEADER (accounts for desktop navbar top-14) -->
-<div class="sticky top-0 md:top-14 z-30 border-b border-border/40 bg-background/95 backdrop-blur-md px-4 py-2.5 md:px-6">
-	<div class="mx-auto max-w-7xl space-y-2.5">
-		<!-- Search Form -->
-		<form onsubmit={handleSubmit} class="relative flex items-center w-full max-w-2xl">
+<!-- STICKY TOP SEARCH HEADER -->
+<div class="sticky top-0 md:top-14 z-30 bg-background/95 backdrop-blur-md px-4 py-2.5 md:px-6">
+	<div class="mx-auto max-w-7xl flex flex-col items-center space-y-2.5">
+		<!-- Search Input Bar -->
+		<form onsubmit={handleSubmit} class="relative flex items-center w-full max-w-xl mx-auto">
 			<Search class="absolute left-3.5 h-4 w-4 text-muted-foreground pointer-events-none" />
 
-			<!-- type="text" + inputmode="search" prevents duplicate native browser clear button -->
 			<input
 				bind:this={inputRef}
 				bind:value={query}
@@ -141,13 +140,13 @@
 
 		<!-- Category Filter Pills -->
 		{#if results.length > 0 || isLoading}
-			<div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-4 px-4 md:mx-0 md:px-0">
+			<div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 w-full md:justify-center -mx-4 px-4 md:mx-0 md:px-0">
 				{#each tabs as tab}
 					{@const isSelected = activeTab === tab.id}
 					<button
 						type="button"
 						onclick={() => (activeTab = tab.id)}
-						class="whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition-colors select-none active:scale-95
+						class="whitespace-nowrap rounded-full px-3.5 py-1 text-xs font-medium transition-colors select-none active:scale-95
 							{isSelected
 								? 'bg-primary text-primary-foreground shadow-xs'
 								: 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'}"
@@ -160,11 +159,11 @@
 	</div>
 </div>
 
-<!-- RESULTS CONTAINER (tightened top padding) -->
+<!-- RESULTS CONTAINER -->
 <div class="mx-auto max-w-7xl px-3 pt-3 pb-6 md:px-6 md:pt-4">
 	<!-- Error state -->
 	{#if error}
-		<div class="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive text-sm">
+		<div class="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive text-sm max-w-xl mx-auto">
 			<AlertCircle class="h-4 w-4 shrink-0" />
 			<p>{error}</p>
 		</div>
@@ -199,7 +198,7 @@
 			<p class="text-sm font-medium">Search for movies, TV series, or people</p>
 		</div>
 
-	<!-- Poster Grid (Clean container with zero default padding above poster) -->
+	<!-- Poster Grid -->
 	{:else}
 		<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 sm:gap-4">
 			{#each filteredResults as item (item.id + item.media_type)}
@@ -207,64 +206,106 @@
 				{@const title = getTitle(item)}
 				{@const meta = getYearOrDetail(item)}
 
-				<div class="group relative flex flex-col overflow-hidden rounded-lg border border-border/40 bg-card active:scale-[0.98] transition-transform select-none">
-					<!-- Poster / Profile Picture (flush to the top edge) -->
-					<div class="relative aspect-[2/3] w-full bg-muted overflow-hidden">
-						{#if imageSrc}
-							<img
-								src={imageSrc}
-								alt={title}
-								loading="lazy"
-								decoding="async"
-								class="h-full w-full object-cover"
-							/>
-						{:else}
-							<div class="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-muted-foreground/40">
-								{#if item.media_type === 'movie'}
-									<Film class="h-8 w-8" />
-								{:else if item.media_type === 'tv'}
-									<Tv class="h-8 w-8" />
-								{:else}
-									<User class="h-8 w-8" />
-								{/if}
-								<span class="text-[10px] text-center">No Photo</span>
-							</div>
-						{/if}
+				<!-- CLICKABLE MOVIE OR TV SHOW -->
+				{#if item.media_type === 'movie' || item.media_type === 'tv'}
+					<a
+						href="/{item.media_type}/{item.id}"
+						class="group relative flex flex-col overflow-hidden rounded-lg border border-border/40 bg-card active:scale-[0.98] transition-transform select-none"
+					>
+						<div class="relative aspect-[2/3] w-full bg-muted overflow-hidden">
+							{#if imageSrc}
+								<img
+									src={imageSrc}
+									alt={title}
+									loading="lazy"
+									decoding="async"
+									class="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+								/>
+							{:else}
+								<div class="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-muted-foreground/40">
+									{#if item.media_type === 'movie'}
+										<Film class="h-8 w-8" />
+									{:else}
+										<Tv class="h-8 w-8" />
+									{/if}
+									<span class="text-[10px]">No Poster</span>
+								</div>
+							{/if}
 
-						<!-- Media Type Badge -->
-						<div class="absolute top-1.5 left-1.5">
-							<Badge
-								variant="secondary"
-								class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
-							>
-								{item.media_type === 'tv' ? 'TV' : item.media_type}
-							</Badge>
-						</div>
-
-						<!-- Star Rating Badge -->
-						{#if item.media_type !== 'person' && item.vote_average && item.vote_average > 0}
-							<div class="absolute top-1.5 right-1.5">
+							<!-- Media Type Badge -->
+							<div class="absolute top-1.5 left-1.5">
 								<Badge
 									variant="secondary"
-									class="text-[9px] font-semibold gap-0.5 px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
+									class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
 								>
-									<Star class="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
-									{item.vote_average.toFixed(1)}
+									{item.media_type === 'tv' ? 'TV' : 'Movie'}
 								</Badge>
 							</div>
-						{/if}
-					</div>
 
-					<!-- Metadata Below Poster -->
-					<div class="p-2 sm:p-2.5">
-						<h2 class="text-xs sm:text-sm font-semibold tracking-tight line-clamp-1" title={title}>
-							{title}
-						</h2>
-						<p class="text-[11px] text-muted-foreground mt-0.5">
-							{meta}
-						</p>
+							<!-- Star Rating Badge -->
+							{#if item.vote_average && item.vote_average > 0}
+								<div class="absolute top-1.5 right-1.5">
+									<Badge
+										variant="secondary"
+										class="text-[9px] font-semibold gap-0.5 px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
+									>
+										<Star class="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
+										{item.vote_average.toFixed(1)}
+									</Badge>
+								</div>
+							{/if}
+						</div>
+
+						<!-- Metadata Below Poster -->
+						<div class="p-2 sm:p-2.5">
+							<h2 class="text-xs sm:text-sm font-semibold tracking-tight line-clamp-1 group-hover:text-primary transition-colors" title={title}>
+								{title}
+							</h2>
+							<p class="text-[11px] text-muted-foreground mt-0.5">
+								{meta}
+							</p>
+						</div>
+					</a>
+
+				<!-- PERSON ITEM (Non-clickable for now) -->
+				{:else}
+					<div class="group relative flex flex-col overflow-hidden rounded-lg border border-border/40 bg-card select-none">
+						<div class="relative aspect-[2/3] w-full bg-muted overflow-hidden">
+							{#if imageSrc}
+								<img
+									src={imageSrc}
+									alt={title}
+									loading="lazy"
+									decoding="async"
+									class="h-full w-full object-cover"
+								/>
+							{:else}
+								<div class="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-muted-foreground/40">
+									<User class="h-8 w-8" />
+									<span class="text-[10px]">No Photo</span>
+								</div>
+							{/if}
+
+							<div class="absolute top-1.5 left-1.5">
+								<Badge
+									variant="secondary"
+									class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
+								>
+									Person
+								</Badge>
+							</div>
+						</div>
+
+						<div class="p-2 sm:p-2.5">
+							<h2 class="text-xs sm:text-sm font-semibold tracking-tight line-clamp-1" title={title}>
+								{title}
+							</h2>
+							<p class="text-[11px] text-muted-foreground mt-0.5">
+								{meta}
+							</p>
+						</div>
 					</div>
-				</div>
+				{/if}
 			{/each}
 		</div>
 	{/if}

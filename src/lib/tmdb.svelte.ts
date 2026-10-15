@@ -7,7 +7,6 @@ export interface TMDBMovie {
 	poster_path: string | null;
 	release_date?: string;
 	vote_average?: number;
-	overview?: string;
 }
 
 export interface TMDBTV {
@@ -17,7 +16,6 @@ export interface TMDBTV {
 	poster_path: string | null;
 	first_air_date?: string;
 	vote_average?: number;
-	overview?: string;
 }
 
 export interface TMDBPerson {
@@ -37,6 +35,15 @@ export interface TMDBSearchResponse {
 	total_results: number;
 }
 
+export interface UnifiedMediaDetail {
+	id: number;
+	type: 'movie' | 'tv';
+	title: string;
+	poster_path: string | null;
+	backdrop_path: string | null;
+	duration?: string;
+}
+
 class TMDBStore {
 	apiKey = $state<string>('');
 	isOpenModal = $state<boolean>(false);
@@ -44,7 +51,6 @@ class TMDBStore {
 	constructor() {
 		if (typeof window !== 'undefined') {
 			this.apiKey = localStorage.getItem('tmdb_api_key') || '';
-			// Auto-open modal if no key is found
 			if (!this.apiKey) {
 				this.isOpenModal = true;
 			}
@@ -72,20 +78,16 @@ class TMDBStore {
 
 	getHeaders() {
 		if (this.apiKey.startsWith('ey')) {
-			// Bearer Read Access Token (v4)
 			return {
 				Authorization: `Bearer ${this.apiKey}`,
 				'Content-Type': 'application/json'
 			};
 		}
-		return {
-			'Content-Type': 'application/json'
-		};
+		return { 'Content-Type': 'application/json' };
 	}
 
 	buildUrl(path: string, params: Record<string, string> = {}) {
 		const url = new URL(`https://api.themoviedb.org/3${path}`);
-		// If using standard v3 API key (not JWT Bearer token)
 		if (!this.apiKey.startsWith('ey')) {
 			url.searchParams.set('api_key', this.apiKey);
 		}
@@ -135,6 +137,48 @@ class TMDBStore {
 		}
 
 		return res.json();
+	}
+
+	async getDetails(type: 'movie' | 'tv', id: string | number): Promise<UnifiedMediaDetail> {
+		if (!this.apiKey) {
+			throw new Error('TMDB API Key missing. Please provide your API key first.');
+		}
+
+		const url = this.buildUrl(`/${type}/${id}`, { language: 'en-US' });
+		const res = await fetch(url, { headers: this.getHeaders() });
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({}));
+			throw new Error(err.status_message || `Failed to load details`);
+		}
+
+		const data = await res.json();
+
+		// Calculate average episode runtime for TV
+		const tvRuntime =
+			Array.isArray(data.episode_run_time) && data.episode_run_time.length > 0
+				? Math.round(
+						data.episode_run_time.reduce((acc: number, val: number) => acc + val, 0) /
+							data.episode_run_time.length
+					)
+				: data.last_episode_to_air?.runtime || undefined;
+
+		const duration =
+			type === 'movie'
+				? data.runtime
+					? `${Math.floor(data.runtime / 60)}h ${data.runtime % 60}m`.replace(/^0h /, '')
+					: undefined
+				: tvRuntime
+					? `${tvRuntime}m`
+					: undefined;
+
+		return {
+			id: data.id,
+			type,
+			title: type === 'movie' ? data.title : data.name,
+			poster_path: data.poster_path,
+			backdrop_path: data.backdrop_path,
+			duration
+		};
 	}
 }
 
