@@ -7,15 +7,26 @@
 	import { Button } from '$lib/components/ui/button';
 	import { tmdb } from '$lib/tmdb.svelte';
 	import { syncEngine } from '$lib/sync/syncEngine.svelte';
-	import { Key, Cloud, Loader2, ExternalLink, Check, Lock } from 'lucide-svelte';
+	import { getAllTrackedMedia, getAllLists } from '$lib/db/mediaStore';
+	import {
+		Key,
+		Cloud,
+		HardDrive,
+		Download,
+		Trash2,
+		Loader2,
+		ExternalLink,
+		Check,
+		Lock
+	} from 'lucide-svelte';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 
-	// Guard: Both TMDB and Backend are mandatory
+	// Guard: Both TMDB and Backend are compulsory
 	const isFullyConfigured = $derived(tmdb.hasKey && syncEngine.isConfigured);
 
-	// Tabs
-	let activeTab = $state<'tmdb' | 'sync'>('tmdb');
+	// Tabs: tmdb | sync | storage
+	let activeTab = $state<'tmdb' | 'sync' | 'storage'>('tmdb');
 
 	// TMDB Tab State
 	let inputTmdbKey = $state(tmdb.apiKey);
@@ -28,6 +39,41 @@
 	let isTestingSync = $state(false);
 	let syncError = $state<string | null>(null);
 
+	// Storage & Data State
+	let storageUsed = $state('Calculating...');
+	let storageQuota = $state('');
+	let mediaCount = $state(0);
+	let listsCount = $state(0);
+	let isExporting = $state(false);
+	let exportSuccess = $state(false);
+
+	function formatBytes(bytes: number) {
+		if (bytes === 0) return '0 B';
+		const k = 1024;
+		const sizes = ['B', 'KB', 'MB', 'GB'];
+		const i = Math.floor(Math.log(bytes) / Math.log(k));
+		return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+	}
+
+	async function loadStorageStats() {
+		try {
+			if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
+				const estimate = await navigator.storage.estimate();
+				storageUsed = formatBytes(estimate.usage || 0);
+				storageQuota = formatBytes(estimate.quota || 0);
+			}
+
+			const [media, lists] = await Promise.all([
+				getAllTrackedMedia(),
+				getAllLists()
+			]);
+			mediaCount = media.length;
+			listsCount = lists.length;
+		} catch (e) {
+			console.error('Could not load storage stats:', e);
+		}
+	}
+
 	$effect(() => {
 		if (open) {
 			inputTmdbKey = tmdb.apiKey;
@@ -36,15 +82,17 @@
 			tmdbError = null;
 			syncError = null;
 
-			// If TMDB is already set, jump straight to Sync tab
-			if (tmdb.hasKey && !syncEngine.isConfigured) {
-				activeTab = 'sync';
-			} else {
+			if (!tmdb.hasKey) {
 				activeTab = 'tmdb';
+			} else if (!syncEngine.isConfigured) {
+				activeTab = 'sync';
 			}
+
+			loadStorageStats();
 		}
 	});
 
+	// --- TMDB Handler ---
 	async function handleSaveTmdb() {
 		const trimmed = inputTmdbKey.trim();
 		if (!trimmed) {
@@ -65,7 +113,6 @@
 
 		tmdb.setApiKey(trimmed);
 
-		// Auto advance to sync tab if backend isn't set yet
 		if (!syncEngine.isConfigured) {
 			activeTab = 'sync';
 		} else if (isFullyConfigured) {
@@ -73,6 +120,7 @@
 		}
 	}
 
+	// --- Sync Handler ---
 	async function handleSaveSync() {
 		const trimmedUrl = inputSyncUrl.trim();
 		const trimmedSecret = inputSyncSecret.trim();
@@ -89,7 +137,6 @@
 		isTestingSync = true;
 		syncError = null;
 
-		// Test connection with user's Cloudflare Worker
 		const res = await syncEngine.testConnection(trimmedUrl, trimmedSecret);
 		isTestingSync = false;
 
@@ -98,23 +145,71 @@
 			return;
 		}
 
-		// Save and run first sync
 		syncEngine.saveConfig(trimmedUrl, trimmedSecret);
 		await syncEngine.sync();
 
-		// If everything is satisfied, unlock the app!
 		if (tmdb.hasKey) {
 			open = false;
 		} else {
 			activeTab = 'tmdb';
 		}
 	}
+
+	// --- Export Backup JSON ---
+	async function handleExport() {
+		isExporting = true;
+		try {
+			const [media, lists] = await Promise.all([
+				getAllTrackedMedia(),
+				getAllLists()
+			]);
+
+			const backup = {
+				app: 'cinelog',
+				version: 1,
+				exported_at: new Date().toISOString(),
+				tracked_media: media,
+				custom_lists: lists
+			};
+
+			const blob = new Blob([JSON.stringify(backup, null, 2)], {
+				type: 'application/json'
+			});
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `cinelog-backup-${new Date().toISOString().slice(0, 10)}.json`;
+			a.click();
+			URL.revokeObjectURL(url);
+
+			exportSuccess = true;
+			setTimeout(() => (exportSuccess = false), 2500);
+		} catch (err) {
+			console.error('Export failed:', err);
+		} finally {
+			isExporting = false;
+		}
+	}
+
+	// --- Danger Zone: Wipe Local Data ---
+	async function handleWipeData() {
+		const confirmed = confirm(
+			'Are you sure you want to wipe local data? This deletes your local IndexedDB cache and resets your credentials.'
+		);
+		if (!confirmed) return;
+
+		localStorage.clear();
+		const dbs = await window.indexedDB.databases?.() || [];
+		for (const db of dbs) {
+			if (db.name) window.indexedDB.deleteDatabase(db.name);
+		}
+		window.location.reload();
+	}
 </script>
 
 <Dialog.Root
 	bind:open
 	onOpenChange={(nextOpen) => {
-		// Prevent closing if not fully configured
 		if (!nextOpen && !isFullyConfigured) return;
 		open = nextOpen;
 	}}
@@ -131,28 +226,34 @@
 			</Dialog.Title>
 			<Dialog.Description>
 				{#if !isFullyConfigured}
-					Both TMDB API and your Cloudflare Sync Backend are compulsory to use this app.
+					Both TMDB API and Cloudflare Sync are compulsory to use this app.
 				{:else}
-					Manage your client-side credentials.
+					Manage credentials, sync endpoint, and storage.
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 
 		<Tabs.Root bind:value={activeTab} class="w-full pt-1">
-			<Tabs.List class="grid w-full grid-cols-2">
-				<Tabs.Trigger value="tmdb" class="gap-1.5 text-xs">
-					<Key class="h-3.5 w-3.5" />
-					<span>1. TMDB Key</span>
+			<Tabs.List class="grid w-full grid-cols-3">
+				<Tabs.Trigger value="tmdb" class="gap-1 text-xs">
+					<Key class="h-3 w-3" />
+					<span>TMDB</span>
 					{#if tmdb.hasKey}
-						<Check class="h-3 w-3 text-emerald-500 ml-1" />
+						<Check class="h-3 w-3 text-emerald-500" />
 					{/if}
 				</Tabs.Trigger>
-				<Tabs.Trigger value="sync" class="gap-1.5 text-xs">
-					<Cloud class="h-3.5 w-3.5" />
-					<span>2. Cloud Sync</span>
+
+				<Tabs.Trigger value="sync" class="gap-1 text-xs">
+					<Cloud class="h-3 w-3" />
+					<span>Sync</span>
 					{#if syncEngine.isConfigured}
-						<Check class="h-3 w-3 text-emerald-500 ml-1" />
+						<Check class="h-3 w-3 text-emerald-500" />
 					{/if}
+				</Tabs.Trigger>
+
+				<Tabs.Trigger value="storage" class="gap-1 text-xs" disabled={!isFullyConfigured}>
+					<HardDrive class="h-3 w-3" />
+					<span>Storage</span>
 				</Tabs.Trigger>
 			</Tabs.List>
 
@@ -204,7 +305,7 @@
 			<!-- TAB 2: CLOUD SYNC -->
 			<Tabs.Content value="sync" class="space-y-4 pt-3">
 				<div class="space-y-1.5">
-					<Label for="sync-url" class="text-xs">Your Cloudflare Worker Sync URL</Label>
+					<Label for="sync-url" class="text-xs">Cloudflare Worker Sync URL</Label>
 					<Input
 						id="sync-url"
 						placeholder="https://myapp-sync-backend.yourname.workers.dev/sync"
@@ -214,7 +315,7 @@
 				</div>
 
 				<div class="space-y-1.5">
-					<Label for="sync-secret" class="text-xs">Your SYNC_SECRET Password</Label>
+					<Label for="sync-secret" class="text-xs">SYNC_SECRET Password</Label>
 					<Input
 						id="sync-secret"
 						type="password"
@@ -236,9 +337,68 @@
 						<Loader2 class="mr-2 h-3.5 w-3.5 animate-spin" />
 						Testing Cloudflare Connection...
 					{:else}
-						Connect & Unlock App
+						Connect & Save
 					{/if}
 				</Button>
+			</Tabs.Content>
+
+			<!-- TAB 3: STORAGE & DATA -->
+			<Tabs.Content value="storage" class="space-y-4 pt-3">
+				<!-- Storage Metrics -->
+				<div class="rounded-xl border border-border/50 bg-muted/30 p-3 space-y-2.5">
+					<div class="flex items-center justify-between text-xs">
+						<span class="text-muted-foreground font-medium">Local Database Size:</span>
+						<span class="font-bold text-foreground">{storageUsed}</span>
+					</div>
+
+					<div class="flex items-center justify-between text-xs pt-1 border-t border-border/40">
+						<span class="text-muted-foreground">Tracked Titles:</span>
+						<span class="font-semibold text-foreground">{mediaCount}</span>
+					</div>
+
+					<div class="flex items-center justify-between text-xs">
+						<span class="text-muted-foreground">Custom Lists:</span>
+						<span class="font-semibold text-foreground">{listsCount}</span>
+					</div>
+				</div>
+
+				<!-- Export JSON Backup -->
+				<div class="space-y-1.5">
+					<Label class="text-xs">Backup & Portability</Label>
+					<Button
+						variant="outline"
+						onclick={handleExport}
+						disabled={isExporting}
+						class="w-full justify-center gap-2 cursor-pointer h-9 text-xs"
+					>
+						{#if isExporting}
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+							Exporting...
+						{:else if exportSuccess}
+							<Check class="h-3.5 w-3.5 text-emerald-500" />
+							<span>Backup Downloaded!</span>
+						{:else}
+							<Download class="h-3.5 w-3.5" />
+							<span>Export Library (.json)</span>
+						{/if}
+					</Button>
+					<p class="text-[11px] text-muted-foreground">
+						Download all ratings, logs, and custom lists as an offline JSON file.
+					</p>
+				</div>
+
+				<!-- Danger Zone -->
+				<div class="space-y-1.5 pt-2 border-t border-border/40">
+					<Label class="text-xs text-destructive">Danger Zone</Label>
+					<Button
+						variant="destructive"
+						onclick={handleWipeData}
+						class="w-full justify-center gap-2 cursor-pointer h-9 text-xs"
+					>
+						<Trash2 class="h-3.5 w-3.5" />
+						<span>Wipe Local Data & Reset</span>
+					</Button>
+				</div>
 			</Tabs.Content>
 		</Tabs.Root>
 	</Dialog.Content>
