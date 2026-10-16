@@ -137,6 +137,6 @@ export const syncEngine = new SyncEngineState();
 
 if (typeof window !== 'undefined') {
 	registerSyncCallback(() => {
-		syncEngine.triggerAutoSync(1500);
+		syncEngine.triggerAutoSync(500);
 	});
 }
