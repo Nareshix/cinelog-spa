@@ -67,7 +67,7 @@ class SyncEngineState {
 		}
 	}
 
-	triggerAutoSync(delayMs = 1000) {
+	triggerAutoSync(delayMs = 500) {
 		clearTimeout(this.debounceTimer);
 		this.debounceTimer = setTimeout(() => {
 			this.sync();
