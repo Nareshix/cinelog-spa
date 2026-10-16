@@ -49,7 +49,7 @@ const onVisibilityChange = () => {
 <div class="relative flex min-h-screen flex-col">
   <Navigation />
 
-  <main class="flex-1 pb-24 md:pb-8">
+<main class="flex-1 pb-24 md:pb-8" style="padding-top: env(safe-area-inset-top, 0px);">
     {@render children()}
   </main>
 

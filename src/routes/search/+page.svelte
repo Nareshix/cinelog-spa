@@ -107,7 +107,10 @@
 <svelte:window ontouchmove={handleScroll} />
 
 <!-- STICKY TOP SEARCH HEADER -->
-<div class="sticky top-0 md:top-14 z-30 bg-background/95 backdrop-blur-md px-4 py-2.5 md:px-6">
+<div
+  class="sticky top-0 md:top-14 z-30 bg-background/95 backdrop-blur-md px-4 pb-2.5 md:px-6"
+  style="padding-top: max(env(safe-area-inset-top, 0px), 0.625rem);"
+>
 	<div class="mx-auto max-w-7xl flex flex-col items-center space-y-2.5">
 		<!-- Search Input Bar -->
 		<form onsubmit={handleSubmit} class="relative flex items-center w-full max-w-xl mx-auto">
