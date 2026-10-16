@@ -206,68 +206,50 @@
 				{@const title = getTitle(item)}
 				{@const meta = getYearOrDetail(item)}
 
-				<!-- CLICKABLE MOVIE OR TV SHOW -->
-				{#if item.media_type === 'movie' || item.media_type === 'tv'}
-					<a
-						href="/{item.media_type}/{item.id}"
-						class="group relative flex flex-col overflow-hidden rounded-lg border border-border/40 bg-card active:scale-[0.98] transition-transform select-none"
-					>
-						<div class="relative aspect-[2/3] w-full bg-muted overflow-hidden">
-							{#if imageSrc}
-								<img
-									src={imageSrc}
-									alt={title}
-									loading="lazy"
-									decoding="async"
-									class="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-								/>
-							{:else}
-								<div class="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-muted-foreground/40">
-									{#if item.media_type === 'movie'}
-										<Film class="h-8 w-8" />
-									{:else}
-										<Tv class="h-8 w-8" />
-									{/if}
-									<span class="text-[10px]">No Poster</span>
-								</div>
-							{/if}
+<!-- CLICKABLE MOVIE OR TV SHOW -->
+{#if item.media_type === 'movie' || item.media_type === 'tv'}
+	<a
+		href="/{item.media_type}/{item.id}"
+		class="group relative flex flex-col overflow-hidden rounded-xl border border-border/40 bg-card active:scale-[0.98] transition-transform select-none"
+	>
+		<!-- 100% CLEAN POSTER (No Badges) -->
+		<div class="relative aspect-[2/3] w-full bg-muted overflow-hidden">
+			{#if imageSrc}
+				<img
+					src={imageSrc}
+					alt={title}
+					loading="lazy"
+					decoding="async"
+					class="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+				/>
+			{:else}
+				<div class="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-muted-foreground/40">
+					{#if item.media_type === 'movie'}
+						<Film class="h-8 w-8" />
+					{:else}
+						<Tv class="h-8 w-8" />
+					{/if}
+					<span class="text-[10px]">No Poster</span>
+				</div>
+			{/if}
+		</div>
 
-							<!-- Media Type Badge -->
-							<div class="absolute top-1.5 left-1.5">
-								<Badge
-									variant="secondary"
-									class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
-								>
-									{item.media_type === 'tv' ? 'TV' : 'Movie'}
-								</Badge>
-							</div>
+		<!-- METADATA BELOW POSTER -->
+		<div class="p-2 sm:p-2.5 space-y-1">
+			<h2 class="text-xs sm:text-sm font-semibold tracking-tight line-clamp-1 group-hover:text-primary transition-colors" title={title}>
+				{title}
+			</h2>
 
-							<!-- Star Rating Badge -->
-							{#if item.vote_average && item.vote_average > 0}
-								<div class="absolute top-1.5 right-1.5">
-									<Badge
-										variant="secondary"
-										class="text-[9px] font-semibold gap-0.5 px-1.5 py-0.5 bg-background/80 backdrop-blur-xs border-border/30"
-									>
-										<Star class="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
-										{item.vote_average.toFixed(1)}
-									</Badge>
-								</div>
-							{/if}
-						</div>
-
-						<!-- Metadata Below Poster -->
-						<div class="p-2 sm:p-2.5">
-							<h2 class="text-xs sm:text-sm font-semibold tracking-tight line-clamp-1 group-hover:text-primary transition-colors" title={title}>
-								{title}
-							</h2>
-							<p class="text-[11px] text-muted-foreground mt-0.5">
-								{meta}
-							</p>
-						</div>
-					</a>
-
-				<!-- PERSON ITEM (Non-clickable for now) -->
+			<!-- Bottom Row: Release Year on Left, Media Type on Right -->
+			<div class="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+				<span>{meta}</span>
+				<span class="uppercase tracking-wider font-bold text-[9px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground">
+					{item.media_type === 'tv' ? 'TV' : 'Movie'}
+				</span>
+			</div>
+		</div>
+	</a>
+					<!-- PERSON ITEM (Non-clickable for now) -->
 				{:else}
 					<div class="group relative flex flex-col overflow-hidden rounded-lg border border-border/40 bg-card select-none">
 						<div class="relative aspect-[2/3] w-full bg-muted overflow-hidden">

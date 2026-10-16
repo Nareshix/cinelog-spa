@@ -1,29 +1,42 @@
 <!-- src/routes/+layout.svelte -->
 <script lang="ts">
   import Navigation from '$lib/components/Navigation.svelte';
-  import ApiKeyModal from '$lib/components/ApiKeyModal.svelte';
-  import { flushPendingSync } from '$lib/sync/syncEngine';
+  import SettingsModal from '$lib/components/SettingsModal.svelte';
+  import { tmdb } from '$lib/tmdb.svelte';
+  import { syncEngine } from '$lib/sync/syncEngine.svelte';
+  import { untrack } from 'svelte';
   import './layout.css';
 
   let { children } = $props();
+  let isSettingsOpen = $state(false);
 
   $effect(() => {
-    // Flush on boot
-    flushPendingSync();
+    // Lock screen on startup if either credential is missing
+    if (!tmdb.hasKey || !syncEngine.isConfigured) {
+      isSettingsOpen = true;
+    }
 
-    // Flush when device reconnects to Wi-Fi/cellular
-    window.addEventListener('online', flushPendingSync);
+    // 1. untrack prevents Svelte 5 from infinite-looping on $state changes
+    untrack(() => {
+      syncEngine.sync();
+    });
 
-    // Flush when user switches back to the app on iOS / Android
+    // 2. Re-sync when coming back online
+    const onOnline = () => {
+      untrack(() => syncEngine.sync());
+    };
+    window.addEventListener('online', onOnline);
+
+    // 3. Re-sync when switching tabs / returning to app
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        flushPendingSync();
+        untrack(() => syncEngine.sync());
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
-      window.removeEventListener('online', flushPendingSync);
+      window.removeEventListener('online', onOnline);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   });
@@ -36,5 +49,6 @@
     {@render children()}
   </main>
 
-  <ApiKeyModal />
+  <!-- Compulsory Setup Modal -->
+  <SettingsModal bind:open={isSettingsOpen} />
 </div>

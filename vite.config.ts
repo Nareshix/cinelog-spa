@@ -1,5 +1,6 @@
+// vite.config.ts
 import tailwindcss from '@tailwindcss/vite';
-import adapter from '@sveltejs/adapter-static';
+import adapter from '@sveltejs/adapter-cloudflare';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
@@ -8,14 +9,16 @@ export default defineConfig({
 		tailwindcss(),
 		sveltekit({
 			alias: {
-				'$lib': 'src/lib'
+				$lib: 'src/lib'
 			},
 			compilerOptions: {
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter({
-				fallback: 'index.html'
+				platformProxy: {
+					configPath: 'wrangler.toml'
+				}
 			})
 		})
 	]

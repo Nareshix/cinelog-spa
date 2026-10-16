@@ -2,7 +2,7 @@
 import { getPendingSyncMedia, saveTrackedMedia, type TrackedMedia } from '$lib/db/mediaStore';
 
 // Change this URL to your Cloudflare Worker, Supabase Edge Function, or Google App Script endpoint
-const SYNC_ENDPOINT = '/api/sync';
+const SYNC_ENDPOINT = '/api_9482/sync';
 
 export async function dispatchSync(item: TrackedMedia) {
 	// 1. Mark as pending locally first

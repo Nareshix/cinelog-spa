@@ -40,16 +40,22 @@
     let isSearching = $state(false);
     let debounceTimeout: ReturnType<typeof setTimeout>;
 
-    async function load() {
-        isLoading = true;
-        list = await getListById(listId);
-        isLoading = false;
-    }
+async function load() {
+    isLoading = true;
+    list = await getListById(listId);
+    isLoading = false;
+  }
 
-    $effect(() => {
-        load();
-    });
+  $effect(() => {
+    load();
 
+    const onSync = () => load();
+    window.addEventListener('app:synced', onSync);
+
+    return () => {
+      window.removeEventListener('app:synced', onSync);
+    };
+  });
     // Debounced TMDB search inside the modal
     $effect(() => {
         const q = searchQuery.trim();

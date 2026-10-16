@@ -20,17 +20,23 @@
 	// Delete confirmation modal
 	let listToDelete = $state<CustomList | null>(null);
 
-	async function load() {
-		isLoading = true;
-		lists = await getAllLists();
-		isLoading = false;
-	}
 
-	$effect(() => {
-		load();
-	});
+async function load() {
+    isLoading = true;
+    lists = await getAllLists();
+    isLoading = false;
+  }
 
-	async function handleCreate(e: SubmitEvent) {
+  $effect(() => {
+    load();
+
+    const onSync = () => load();
+    window.addEventListener('app:synced', onSync);
+
+    return () => {
+      window.removeEventListener('app:synced', onSync);
+    };
+  });	async function handleCreate(e: SubmitEvent) {
 		e.preventDefault();
 		const trimmedTitle = newTitle.trim();
 		if (!trimmedTitle) return;

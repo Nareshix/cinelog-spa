@@ -1,7 +1,7 @@
 // src/lib/db/mediaStore.ts
 
 export interface TrackedMedia {
-	key: string; // e.g. "tv_94605" or "movie_550"
+	key: string;
 	mediaId: string | number;
 	type: 'movie' | 'tv';
 	title: string;
@@ -9,15 +9,16 @@ export interface TrackedMedia {
 	duration?: string;
 	status: 'watching' | 'watched' | 'watchlist' | 'none';
 	liked: boolean;
-	rating: number; // 0 to 5 in 0.5 steps
+	rating: number;
 	notes?: string;
 	notes_updated_at?: string;
 	updated_at: string;
 	sync_status?: 'synced' | 'pending';
+	deleted?: boolean;
 }
 
 export interface CustomListItem {
-	key: string; // e.g. "movie_550"
+	key: string;
 	mediaId: string | number;
 	type: 'movie' | 'tv';
 	title: string;
@@ -32,12 +33,27 @@ export interface CustomList {
 	items: CustomListItem[];
 	created_at: string;
 	updated_at: string;
+	sync_status?: 'synced' | 'pending';
+	deleted?: boolean;
 }
 
 const DB_NAME = 'app_media_db';
 const DB_VERSION = 3;
 const STORE_NAME = 'tracked_media';
 const LISTS_STORE = 'custom_lists';
+
+// Auto-sync change listener
+let onDataChangedCallback: (() => void) | null = null;
+
+export function registerSyncCallback(fn: () => void) {
+	onDataChangedCallback = fn;
+}
+
+function notifyChange() {
+	if (onDataChangedCallback) {
+		onDataChangedCallback();
+	}
+}
 
 function getDB(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
@@ -47,7 +63,6 @@ function getDB(): Promise<IDBDatabase> {
 		request.onupgradeneeded = (event) => {
 			const db = request.result;
 
-			// Store 1: Tracked Media
 			let store: IDBObjectStore;
 			if (!db.objectStoreNames.contains(STORE_NAME)) {
 				store = db.createObjectStore(STORE_NAME, { keyPath: 'key' });
@@ -59,9 +74,15 @@ function getDB(): Promise<IDBDatabase> {
 				store.createIndex('sync_status', 'sync_status', { unique: false });
 			}
 
-			// Store 2: Custom Lists
+			let listStore: IDBObjectStore;
 			if (!db.objectStoreNames.contains(LISTS_STORE)) {
-				db.createObjectStore(LISTS_STORE, { keyPath: 'id' });
+				listStore = db.createObjectStore(LISTS_STORE, { keyPath: 'id' });
+			} else {
+				listStore = (event.target as IDBOpenDBRequest).transaction!.objectStore(LISTS_STORE);
+			}
+
+			if (!listStore.indexNames.contains('sync_status')) {
+				listStore.createIndex('sync_status', 'sync_status', { unique: false });
 			}
 		};
 
@@ -79,7 +100,10 @@ export async function getTrackedMedia(type: string, id: string | number): Promis
 			const tx = db.transaction(STORE_NAME, 'readonly');
 			const store = tx.objectStore(STORE_NAME);
 			const request = store.get(`${type}_${id}`);
-			request.onsuccess = () => resolve(request.result || null);
+			request.onsuccess = () => {
+				const item = request.result as TrackedMedia | undefined;
+				resolve(item && !item.deleted ? item : null);
+			};
 			request.onerror = () => resolve(null);
 		});
 	} catch {
@@ -94,7 +118,10 @@ export async function getAllTrackedMedia(): Promise<TrackedMedia[]> {
 			const tx = db.transaction(STORE_NAME, 'readonly');
 			const store = tx.objectStore(STORE_NAME);
 			const request = store.getAll();
-			request.onsuccess = () => resolve(request.result || []);
+			request.onsuccess = () => {
+				const all = (request.result || []) as TrackedMedia[];
+				resolve(all.filter((i) => !i.deleted));
+			};
 			request.onerror = () => resolve([]);
 		});
 	} catch {
@@ -102,40 +129,22 @@ export async function getAllTrackedMedia(): Promise<TrackedMedia[]> {
 	}
 }
 
-export async function getPendingSyncMedia(): Promise<TrackedMedia[]> {
-	try {
-		const db = await getDB();
-		return new Promise((resolve) => {
-			const tx = db.transaction(STORE_NAME, 'readonly');
-			const store = tx.objectStore(STORE_NAME);
-
-			if (store.indexNames.contains('sync_status')) {
-				const index = store.index('sync_status');
-				const request = index.getAll('pending');
-				request.onsuccess = () => resolve(request.result || []);
-				request.onerror = () => resolve([]);
-			} else {
-				const request = store.getAll();
-				request.onsuccess = () => {
-					const all = (request.result || []) as TrackedMedia[];
-					resolve(all.filter((item) => item.sync_status === 'pending'));
-				};
-				request.onerror = () => resolve([]);
-			}
-		});
-	} catch {
-		return [];
-	}
-}
-
-export async function saveTrackedMedia(media: TrackedMedia): Promise<void> {
+export async function saveTrackedMedia(
+	media: TrackedMedia,
+	syncStatus: 'pending' | 'synced' = 'pending'
+): Promise<void> {
 	try {
 		const db = await getDB();
 		return new Promise((resolve, reject) => {
 			const tx = db.transaction(STORE_NAME, 'readwrite');
 			const store = tx.objectStore(STORE_NAME);
+			media.sync_status = syncStatus;
+			media.deleted = false; // Guarantees tombstone is cleared if re-added
 			const request = store.put(media);
-			request.onsuccess = () => resolve();
+			request.onsuccess = () => {
+				if (syncStatus === 'pending') notifyChange();
+				resolve();
+			};
 			request.onerror = () => reject(request.error);
 		});
 	} catch (e) {
@@ -143,18 +152,44 @@ export async function saveTrackedMedia(media: TrackedMedia): Promise<void> {
 	}
 }
 
+// Soft delete: writes a tombstone so remote devices know to delete it
 export async function deleteTrackedMedia(type: string, id: string | number): Promise<void> {
 	try {
 		const db = await getDB();
-		return new Promise((resolve, reject) => {
+		return new Promise((resolve) => {
 			const tx = db.transaction(STORE_NAME, 'readwrite');
 			const store = tx.objectStore(STORE_NAME);
-			const request = store.delete(`${type}_${id}`);
-			request.onsuccess = () => resolve();
-			request.onerror = () => reject(request.error);
+			const key = `${type}_${id}`;
+			const getReq = store.get(key);
+
+			getReq.onsuccess = () => {
+				const existing = getReq.result as TrackedMedia | undefined;
+				const tombstone: TrackedMedia = {
+					...(existing || {
+						key,
+						mediaId: id,
+						type: type as 'movie' | 'tv',
+						title: '',
+						poster_path: null,
+						status: 'none',
+						liked: false,
+						rating: 0
+					}),
+					deleted: true,
+					sync_status: 'pending',
+					updated_at: new Date().toISOString()
+				};
+				const putReq = store.put(tombstone);
+				putReq.onsuccess = () => {
+					notifyChange();
+					resolve();
+				};
+				putReq.onerror = () => resolve();
+			};
+			getReq.onerror = () => resolve();
 		});
 	} catch (e) {
-		console.error('Failed to delete from IndexedDB', e);
+		console.error('Failed to tombstone TrackedMedia', e);
 	}
 }
 
@@ -168,7 +203,7 @@ export async function getAllLists(): Promise<CustomList[]> {
 			const store = tx.objectStore(LISTS_STORE);
 			const request = store.getAll();
 			request.onsuccess = () => {
-				const lists = (request.result || []) as CustomList[];
+				const lists = ((request.result || []) as CustomList[]).filter((l) => !l.deleted);
 				lists.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 				resolve(lists);
 			};
@@ -186,7 +221,10 @@ export async function getListById(id: string): Promise<CustomList | null> {
 			const tx = db.transaction(LISTS_STORE, 'readonly');
 			const store = tx.objectStore(LISTS_STORE);
 			const request = store.get(id);
-			request.onsuccess = () => resolve(request.result || null);
+			request.onsuccess = () => {
+				const item = request.result as CustomList | undefined;
+				resolve(item && !item.deleted ? item : null);
+			};
 			request.onerror = () => resolve(null);
 		});
 	} catch {
@@ -194,14 +232,22 @@ export async function getListById(id: string): Promise<CustomList | null> {
 	}
 }
 
-export async function saveList(list: CustomList): Promise<void> {
+export async function saveList(
+	list: CustomList,
+	syncStatus: 'pending' | 'synced' = 'pending'
+): Promise<void> {
 	try {
 		const db = await getDB();
 		return new Promise((resolve, reject) => {
 			const tx = db.transaction(LISTS_STORE, 'readwrite');
 			const store = tx.objectStore(LISTS_STORE);
+			list.sync_status = syncStatus;
+			list.deleted = false; // Guarantees tombstone is cleared if re-added
 			const request = store.put(list);
-			request.onsuccess = () => resolve();
+			request.onsuccess = () => {
+				if (syncStatus === 'pending') notifyChange();
+				resolve();
+			};
 			request.onerror = () => reject(request.error);
 		});
 	} catch (e) {
@@ -209,18 +255,35 @@ export async function saveList(list: CustomList): Promise<void> {
 	}
 }
 
+// Soft delete list
 export async function deleteList(id: string): Promise<void> {
 	try {
 		const db = await getDB();
-		return new Promise((resolve, reject) => {
+		return new Promise((resolve) => {
 			const tx = db.transaction(LISTS_STORE, 'readwrite');
 			const store = tx.objectStore(LISTS_STORE);
-			const request = store.delete(id);
-			request.onsuccess = () => resolve();
-			request.onerror = () => reject(request.error);
+			const getReq = store.get(id);
+
+			getReq.onsuccess = () => {
+				const existing = getReq.result as CustomList | undefined;
+				if (existing) {
+					existing.deleted = true;
+					existing.sync_status = 'pending';
+					existing.updated_at = new Date().toISOString();
+					const putReq = store.put(existing);
+					putReq.onsuccess = () => {
+						notifyChange();
+						resolve();
+					};
+					putReq.onerror = () => resolve();
+				} else {
+					resolve();
+				}
+			};
+			getReq.onerror = () => resolve();
 		});
 	} catch (e) {
-		console.error('Failed to delete list from IndexedDB', e);
+		console.error('Failed to delete list', e);
 	}
 }
 
@@ -243,4 +306,97 @@ export async function toggleItemInList(
 	list.updated_at = new Date().toISOString();
 	await saveList(list);
 	return !exists;
+}
+
+// ----------------- SYNC REPLICATION INTERNALS -----------------
+
+export async function getPendingSyncData(): Promise<{ media: TrackedMedia[]; lists: CustomList[] }> {
+	try {
+		const db = await getDB();
+		return new Promise((resolve) => {
+			const tx = db.transaction([STORE_NAME, LISTS_STORE], 'readonly');
+			const mediaReq = tx.objectStore(STORE_NAME).getAll();
+			const listsReq = tx.objectStore(LISTS_STORE).getAll();
+
+			tx.oncomplete = () => {
+				const allMedia = (mediaReq.result || []) as TrackedMedia[];
+				const allLists = (listsReq.result || []) as CustomList[];
+				resolve({
+					media: allMedia.filter((m) => m.sync_status === 'pending'),
+					lists: allLists.filter((l) => l.sync_status === 'pending')
+				});
+			};
+			tx.onerror = () => resolve({ media: [], lists: [] });
+		});
+	} catch {
+		return { media: [], lists: [] };
+	}
+}
+
+export async function applyRemoteSync(remoteMedia: TrackedMedia[], remoteLists: CustomList[]): Promise<void> {
+	try {
+		const db = await getDB();
+		return new Promise((resolve, reject) => {
+			const tx = db.transaction([STORE_NAME, LISTS_STORE], 'readwrite');
+			const mediaStore = tx.objectStore(STORE_NAME);
+			const listStore = tx.objectStore(LISTS_STORE);
+
+			for (const item of remoteMedia) {
+				if (item.deleted) {
+					mediaStore.delete(item.key);
+				} else {
+					item.sync_status = 'synced';
+					mediaStore.put(item);
+				}
+			}
+
+			for (const list of remoteLists) {
+				if (list.deleted) {
+					listStore.delete(list.id);
+				} else {
+					list.sync_status = 'synced';
+					listStore.put(list);
+				}
+			}
+
+			tx.oncomplete = () => resolve();
+			tx.onerror = () => reject(tx.error);
+		});
+	} catch (e) {
+		console.error('Failed to apply remote sync', e);
+	}
+}
+
+export async function markLocalDataSynced(pushedMedia: TrackedMedia[], pushedLists: CustomList[]): Promise<void> {
+	try {
+		const db = await getDB();
+		return new Promise((resolve) => {
+			const tx = db.transaction([STORE_NAME, LISTS_STORE], 'readwrite');
+			const mediaStore = tx.objectStore(STORE_NAME);
+			const listStore = tx.objectStore(LISTS_STORE);
+
+			for (const m of pushedMedia) {
+				if (m.deleted) {
+					mediaStore.delete(m.key);
+				} else {
+					m.sync_status = 'synced';
+					mediaStore.put(m);
+				}
+			}
+
+			for (const l of pushedLists) {
+				if (l.deleted) {
+					listStore.delete(l.id);
+				} else {
+					l.sync_status = 'synced';
+					listStore.put(l);
+				}
+			}
+
+			tx.oncomplete = () => resolve();
+			tx.onerror = () => resolve();
+		});
+	} catch (e) {
+		console.error('Failed marking items synced', e);
+	}
 }
