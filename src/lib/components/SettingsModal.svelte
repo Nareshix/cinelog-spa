@@ -17,12 +17,13 @@
 		Loader2,
 		ExternalLink,
 		Check,
-		Lock
+		Lock,
+		RefreshCw
 	} from 'lucide-svelte';
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 
-	// Guard: Both TMDB and Backend are compulsory
+	// Guard: Both TMDB and Backend are configured
 	const isFullyConfigured = $derived(tmdb.hasKey && syncEngine.isConfigured);
 
 	// Tabs: tmdb | sync | storage
@@ -41,7 +42,6 @@
 
 	// Storage & Data State
 	let storageUsed = $state('Calculating...');
-	let storageQuota = $state('');
 	let mediaCount = $state(0);
 	let listsCount = $state(0);
 	let isExporting = $state(false);
@@ -55,12 +55,23 @@
 		return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 	}
 
+	function getRelativeTime(iso: string | null) {
+		if (!iso) return 'Never';
+		const diffSec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+		if (diffSec < 15) return 'Just now';
+		if (diffSec < 60) return `${diffSec}s ago`;
+		const diffMin = Math.floor(diffSec / 60);
+		if (diffMin < 60) return `${diffMin}m ago`;
+		const diffHours = Math.floor(diffMin / 60);
+		if (diffHours < 24) return `${diffHours}h ago`;
+		return `${Math.floor(diffHours / 24)}d ago`;
+	}
+
 	async function loadStorageStats() {
 		try {
 			if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
 				const estimate = await navigator.storage.estimate();
 				storageUsed = formatBytes(estimate.usage || 0);
-				storageQuota = formatBytes(estimate.quota || 0);
 			}
 
 			const [media, lists] = await Promise.all([
@@ -92,7 +103,6 @@
 		}
 	});
 
-	// --- TMDB Handler ---
 	async function handleSaveTmdb() {
 		const trimmed = inputTmdbKey.trim();
 		if (!trimmed) {
@@ -120,7 +130,6 @@
 		}
 	}
 
-	// --- Sync Handler ---
 	async function handleSaveSync() {
 		const trimmedUrl = inputSyncUrl.trim();
 		const trimmedSecret = inputSyncSecret.trim();
@@ -155,7 +164,6 @@
 		}
 	}
 
-	// --- Export Backup JSON ---
 	async function handleExport() {
 		isExporting = true;
 		try {
@@ -165,7 +173,7 @@
 			]);
 
 			const backup = {
-				app: 'cinelog',
+				app: 'CineLog',
 				version: 1,
 				exported_at: new Date().toISOString(),
 				tracked_media: media,
@@ -191,7 +199,6 @@
 		}
 	}
 
-	// --- Danger Zone: Wipe Local Data ---
 	async function handleWipeData() {
 		const confirmed = confirm(
 			'Are you sure you want to wipe local data? This deletes your local IndexedDB cache and resets your credentials.'
@@ -199,7 +206,7 @@
 		if (!confirmed) return;
 
 		localStorage.clear();
-		const dbs = await window.indexedDB.databases?.() || [];
+		const dbs = (await window.indexedDB.databases?.()) || [];
 		for (const db of dbs) {
 			if (db.name) window.indexedDB.deleteDatabase(db.name);
 		}
@@ -207,14 +214,8 @@
 	}
 </script>
 
-<Dialog.Root
-	bind:open
-	onOpenChange={(nextOpen) => {
-		if (!nextOpen && !isFullyConfigured) return;
-		open = nextOpen;
-	}}
->
-	<Dialog.Content class="sm:max-w-md" showCloseButton={isFullyConfigured}>
+<Dialog.Root bind:open>
+	<Dialog.Content class="sm:max-w-md" showCloseButton={true}>
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
 				{#if !isFullyConfigured}
@@ -225,13 +226,49 @@
 				{/if}
 			</Dialog.Title>
 			<Dialog.Description>
-				{#if !isFullyConfigured}
-					Both TMDB API and Cloudflare Sync are compulsory to use this app.
-				{:else}
-					Manage credentials, sync endpoint, and storage.
-				{/if}
+				Manage your credentials, sync status, and storage.
 			</Dialog.Description>
 		</Dialog.Header>
+
+		<!-- QUICK SYNC CARD (Live status + Sync Now button) -->
+		{#if syncEngine.isConfigured}
+			<div class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 p-2.5 text-xs">
+				<div class="flex items-center gap-2 min-w-0">
+					<span class="relative flex h-2 w-2 shrink-0">
+						{#if syncEngine.isSyncing}
+							<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+							<span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+						{:else if syncEngine.error}
+							<span class="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
+						{:else}
+							<span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+						{/if}
+					</span>
+					<div class="truncate">
+						<span class="font-medium text-foreground">
+							{#if syncEngine.isSyncing}
+								Syncing in progress...
+							{:else if syncEngine.error}
+								Sync error: {syncEngine.error}
+							{:else}
+								Cloud: {getRelativeTime(syncEngine.lastSyncTime)}
+							{/if}
+						</span>
+					</div>
+				</div>
+
+				<Button
+					variant="outline"
+					size="xs"
+					onclick={() => syncEngine.sync()}
+					disabled={syncEngine.isSyncing}
+					class="gap-1.5 h-7 cursor-pointer shrink-0 text-xs"
+				>
+					<RefreshCw class="h-3 w-3 {syncEngine.isSyncing ? 'animate-spin text-primary' : ''}" />
+					<span>{syncEngine.isSyncing ? 'Syncing...' : 'Sync Now'}</span>
+				</Button>
+			</div>
+		{/if}
 
 		<Tabs.Root bind:value={activeTab} class="w-full pt-1">
 			<Tabs.List class="grid w-full grid-cols-3">
@@ -251,7 +288,7 @@
 					{/if}
 				</Tabs.Trigger>
 
-				<Tabs.Trigger value="storage" class="gap-1 text-xs" disabled={!isFullyConfigured}>
+				<Tabs.Trigger value="storage" class="gap-1 text-xs">
 					<HardDrive class="h-3 w-3" />
 					<span>Storage</span>
 				</Tabs.Trigger>
@@ -335,7 +372,7 @@
 				>
 					{#if isTestingSync}
 						<Loader2 class="mr-2 h-3.5 w-3.5 animate-spin" />
-						Testing Cloudflare Connection...
+						Testing Connection...
 					{:else}
 						Connect & Save
 					{/if}
@@ -344,7 +381,6 @@
 
 			<!-- TAB 3: STORAGE & DATA -->
 			<Tabs.Content value="storage" class="space-y-4 pt-3">
-				<!-- Storage Metrics -->
 				<div class="rounded-xl border border-border/50 bg-muted/30 p-3 space-y-2.5">
 					<div class="flex items-center justify-between text-xs">
 						<span class="text-muted-foreground font-medium">Local Database Size:</span>
@@ -362,7 +398,6 @@
 					</div>
 				</div>
 
-				<!-- Export JSON Backup -->
 				<div class="space-y-1.5">
 					<Label class="text-xs">Backup & Portability</Label>
 					<Button
@@ -382,12 +417,8 @@
 							<span>Export Library (.json)</span>
 						{/if}
 					</Button>
-					<p class="text-[11px] text-muted-foreground">
-						Download all ratings, logs, and custom lists as an offline JSON file.
-					</p>
 				</div>
 
-				<!-- Danger Zone -->
 				<div class="space-y-1.5 pt-2 border-t border-border/40">
 					<Label class="text-xs text-destructive">Danger Zone</Label>
 					<Button
@@ -401,5 +432,16 @@
 				</div>
 			</Tabs.Content>
 		</Tabs.Root>
+
+		<!-- Skip button for dev / testing -->
+		<div class="pt-2 border-t border-border/30 flex justify-center">
+			<button
+				type="button"
+				onclick={() => (open = false)}
+				class="text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors cursor-pointer py-1"
+			>
+				Skip for now (Continue in Local Mode)
+			</button>
+		</div>
 	</Dialog.Content>
 </Dialog.Root>
