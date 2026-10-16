@@ -5,15 +5,19 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import MediaActionCard from '$lib/components/MediaActionCard.svelte';
+	import AddToListModal from '$lib/components/AddToListModal.svelte';
 	import { tmdb, getTMDBImageUrl, type UnifiedMediaDetail } from '$lib/tmdb.svelte';
 	import { getTrackedMedia, saveTrackedMedia } from '$lib/db/mediaStore';
-	import { AlertCircle, Film, Tv, Pencil, Plus } from 'lucide-svelte';
+	import { AlertCircle, Film, Tv, Pencil, Plus, ListPlus } from 'lucide-svelte';
 
 	let { type, id }: { type: 'movie' | 'tv'; id: string } = $props();
 
 	let media = $state<UnifiedMediaDetail | null>(null);
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
+
+	// Custom list modal state
+	let isAddToListOpen = $state(false);
 
 	// Notes state loaded from IndexedDB
 	let notes = $state('');
@@ -114,7 +118,7 @@
 
 		<div class="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
 
-			<!-- LEFT: POSTER (Centered on mobile with mx-auto, Left on desktop) -->
+			<!-- LEFT: POSTER -->
 			<div class="w-44 sm:w-56 shrink-0 mx-auto lg:mx-0">
 				<div class="aspect-[2/3] w-full rounded-xl overflow-hidden border border-border/40 bg-muted shadow-md">
 					{#if posterUrl}
@@ -138,21 +142,31 @@
 				</div>
 			</div>
 
-			<!-- CENTER: TITLE + RUNTIME + NOTES (Centered on mobile, Left on desktop) -->
+			<!-- CENTER: TITLE + RUNTIME + ADD TO LIST + NOTES -->
 			<div class="flex-1 space-y-3 min-w-0 w-full flex flex-col items-center lg:items-start text-center lg:text-left">
-				<!-- Title & Duration Badge -->
-				<div class="space-y-1.5 flex flex-col items-center lg:items-start">
+				<!-- Title & Duration Badges -->
+				<div class="space-y-2 flex flex-col items-center lg:items-start">
 					<h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-foreground select-text">
 						{media.title}
 					</h1>
 
-					{#if media.duration}
-						<div>
+					<div class="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+						{#if media.duration}
 							<span class="inline-flex items-center rounded-full border border-border/40 bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground select-none">
 								{media.duration}
 							</span>
-						</div>
-					{/if}
+						{/if}
+
+						<!-- Add to List Button -->
+						<button
+							type="button"
+							onclick={() => (isAddToListOpen = true)}
+							class="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 hover:bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-all cursor-pointer active:scale-95"
+						>
+							<ListPlus class="h-3.5 w-3.5" />
+							<span>Add to list</span>
+						</button>
+					</div>
 				</div>
 
 				<!-- Notes Section -->
@@ -162,7 +176,6 @@
 							{notes}
 						</p>
 
-						<!-- Aligned Center on Mobile, Right on Desktop -->
 						<div class="flex items-center justify-center lg:justify-end gap-2 pt-0.5">
 							{#if lastEdited}
 								<span class="text-[11px] text-muted-foreground/50 select-none">
@@ -183,7 +196,6 @@
 						</div>
 					</div>
 				{:else}
-					<!-- Touch-friendly trigger: "+ Add notes..." (Centered on mobile, Left on desktop) -->
 					<div class="pt-1 flex justify-center lg:justify-start w-full">
 						<button
 							type="button"
@@ -197,7 +209,7 @@
 				{/if}
 			</div>
 
-			<!-- RIGHT: ACTION CARD (Max width on mobile, Fixed width on desktop) -->
+			<!-- RIGHT: ACTION CARD -->
 			<div class="w-full sm:w-72 lg:w-64 xl:w-72 shrink-0 mx-auto lg:mx-0">
 				<MediaActionCard
 					media={{
@@ -243,5 +255,16 @@
 				</form>
 			</Dialog.Content>
 		</Dialog.Root>
+
+		<!-- ADD TO CUSTOM LIST MODAL -->
+		<AddToListModal
+			bind:open={isAddToListOpen}
+			media={{
+				id: media.id,
+				type: media.type,
+				title: media.title,
+				poster_path: media.poster_path
+			}}
+		/>
 	{/if}
 </div>
