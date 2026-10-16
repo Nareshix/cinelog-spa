@@ -18,7 +18,7 @@
 
 <!-- DESKTOP TOP BAR -->
 <header class="sticky top-0 z-40 hidden w-full border-b border-border/40 bg-background/95 backdrop-blur md:block">
-  <div class="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
+<div class="flex h-14 w-full items-center justify-between px-4 md:px-6">
     <div class="flex items-center gap-6">
       <div class="font-semibold tracking-tight">MyApp</div>
 
