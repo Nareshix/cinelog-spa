@@ -28,10 +28,14 @@
     window.addEventListener('online', onOnline);
 
     // 3. Re-sync when switching tabs / returning to app
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+        // You just swiped back into the app -> pull latest changes
         untrack(() => syncEngine.sync());
-      }
+    } else if (document.visibilityState === 'hidden') {
+        // You just swiped away to Home Screen -> instantly flush pending uploads
+        untrack(() => syncEngine.sync());
+    }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
